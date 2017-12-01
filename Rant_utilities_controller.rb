@@ -2,6 +2,19 @@
 # https://codereview.stackexchange.com/questions/10312/communication-between-two-classes-in-ruby
 # https://www.codementor.io/crismali/avoid-instance-variables-use-getters-and-setters-du107rgbi
 # Rant!Rave Copyright 2017 RichardBradleySmith.com
+class Files
+  # define the getters and setters
+  attr_accessor :file_list, :file_function
+  
+  def initialize()
+    #weapons
+    @file_list = {
+        input:      { path: "/home/brad/software/csv/categories",  file: "productioncategories.csv" },
+        categories: { path: "/home/brad/software/csv/categories",  file: "productioncatories.csv" },
+        companies:  { path: "/home/brad/software/csv/companies",   file: "productioncompanies.csv" },
+        master:     { path: "/home/brad/software/csv/masters",     file: "master.csv" }, 
+        audit:      { path: "/home/brad/software/csv/masters",     file: "audit.csv" }      
+      }
 
 class Controller
  def initialize()
