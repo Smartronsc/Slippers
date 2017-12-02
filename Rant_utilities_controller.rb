@@ -6,10 +6,8 @@
 class Controller
  def initialize()
     puts("Initializing controller")
-    # Files defines every thing that makes up the world of files
+    # Files defines every thing that makes up the world of files and uris
     @files    = Files.new 
-    # File_io contains the useful combination of files to process at one time 
-    @function = File_io.new(@files.file_function[0])   
   end  
  
  def start   
@@ -19,6 +17,7 @@ class Controller
  def show_menu
    puts <<-DELIMITER
    1. Remove duplicate locations
+   2. List development categories
      DELIMITER
    selection = gets.chomp
  
@@ -26,17 +25,27 @@ class Controller
      when "0"
        puts(Controller.methods.sort)
      when "1"
-     @function.process_control("deduplicator")
+      @function = File_io.new(@files.file_function[0])    # Deduplicator
+      @function.process_control("deduplicator", @function)
+     when "2"
+      # File_io contains the useful combination of files to process at one time 
+      @uri = File_io.new(@files.file_function[2])         # Reader   
+      @uri.process_control("category_development", @uri)
    else
      exit
    end
  end
 
 class Files
-  # define the getters and setters
-  attr_accessor :file_list, :file_function  
+  # define the getters and setters or in this case the combined attr_accessor
+  attr_accessor :file_list, :file_function, :uri_list  
   
   def initialize()
+    @uri_list = {
+      category_production:  { uri: "http://24.4.249.252/home/rs/Software/csv/chicago1.csv" }, 
+      category_development: { uri: "/home/brad/software/csv/categories/productioncategories.csv" }
+           
+      }
     # These are the different files we can access in combination as needed
     @file_list = {
         categories: { path: "/home/brad/software/csv/categories",  file: "productioncategories.csv" },
@@ -48,9 +57,10 @@ class Files
       }
     # These are the different combinations they are useful to be accessed in
     @file_function = [
-      { function: "Deduplicater", using: [@file_list[:masterin]], creating: [@file_list[:masterout]], logging: [@file_list[:audit]] },
+      { function: "Deduplicater", using: [@file_list[:masterin]], creating: [@file_list[:masterout]], logging: [@file_list[:audit]] },  
       { function: "Matcher", using: [@file_list[:masterin]],  creating: [@file_list[:masterout]], category: [@file_list[:categories]], company: [@file_list[:companies]], logging: [@file_list[:audit]] },
-      ]
+      { function: "Reader", using: [@uri_list[:category_development]] },
+        ]
   end
 end 
 
@@ -59,28 +69,55 @@ class File_io
 
   def initialize(setup)
     puts("Initializing file_io")
-    @function   = setup[:function]
-    @using      = setup[:using]
-    @creating   = setup[:creating]
-    @logging    = setup[:logging]
-    @category   = setup[:category]
-    @company    = setup[:company]
+    @function     = setup[:function]
+    @using        = setup[:using]
+    @creating     = setup[:creating]
+    @logging      = setup[:logging]
+    @category     = setup[:category]
+    @company      = setup[:company]
+    @uri          = setup[:uri]
   end
 
-  def process_control(process)
+  def process_control(process, uri)
     case process
       when "deduplicator"
         @deduplicator = Deduplicator.new
         @deduplicator.remove_duplicate_locations()
+      when "category_development"
+        @uri = Uri.new
+        @uri.write_categories("development", @using)   
     else
         puts @function
         puts @using
         puts @logging
         puts @category
         puts @company
+        puts @uri
     end
   end
 end
+
+class Uri
+  attr_accessor :uri_list 
+  
+  def initialize()
+     puts("Initializing uri")
+   end
+   
+  def write_categories(area, using)
+    case(area)
+    when "development"
+      @file_in = using[0]
+      open_file = @file_in[:uri]
+      open( open_file ) do |record|
+        record.each_line do |line|
+#         puts line if line['sometext']
+          puts line
+          end
+      end
+    end
+  end
+end 
 
 class Deduplicator
   
@@ -136,6 +173,8 @@ class Deduplicator
     puts("read: " + read.to_s + " duplicate: " + duplicate.to_s + " output: " + output.to_s)  
   end
 end 
+
+
 
   puts("===============================================")
   controller = Controller.new  
