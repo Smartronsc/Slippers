@@ -18,9 +18,13 @@ class Controller
    puts <<-DELIMITER
    1. Remove duplicate locations
    2. List development categories
+   3. Find bad records
      DELIMITER
-   selection = gets.chomp
- 
+  # selection = gets.chomp
+   
+   @uri = File_io.new(@files.file_function[3])         # Filter   
+   @uri.process_control("record_filter", @uri)  
+=begin 
   case selection
      when "0"
        puts(Controller.methods.sort)
@@ -31,9 +35,14 @@ class Controller
       # File_io contains the useful combination of files to process at one time 
       @uri = File_io.new(@files.file_function[2])         # Reader   
       @uri.process_control("category_development", @uri)
+      #  Record filter cleans out blank records which make the loader fail
+     when "3"
+      @uri = File_io.new(@files.file_function[3])         # Filter   
+      @uri.process_control("record_filter", @uri)  
    else
      exit
    end
+=end
  end
 
 class Files
@@ -43,7 +52,8 @@ class Files
   def initialize()
     @uri_list = {
       category_production:  { uri: "http://24.4.249.252/home/rs/Software/csv/chicago1.csv" }, 
-      category_development: { uri: "/home/brad/software/csv/categories/productioncategories.csv" }
+      category_development: { uri: "/home/brad/software/csv/categories/productioncategories.csv" },
+      masters:              { uri: "/home/brad/software/csv/masters/master.csv" }
            
       }
     # These are the different files we can access in combination as needed
@@ -51,8 +61,7 @@ class Files
         categories: { path: "/home/brad/software/csv/categories",  file: "productioncategories.csv" },
         companies:  { path: "/home/brad/software/csv/companies",   file: "productioncompanies.csv" },
         master:     { path: "/home/brad/software/csv/masters",     file: "master.csv" },
-        masterin:   { path: "/home/brad/software/test",            file: "masterin.csv" },
-        masterout:  { path: "/home/brad/software/test",            file: "masterout.csv" },  
+        masterout:  { path: "/home/brad/software/csv/masters",     file: "masterout.csv" },  
         audit:      { path: "/home/brad/software/csv/masters",     file: "audit.csv" }      
       }
     # These are the different combinations they are useful to be accessed in
@@ -60,12 +69,13 @@ class Files
       { function: "Deduplicater", using: [@file_list[:masterin]], creating: [@file_list[:masterout]], logging: [@file_list[:audit]] },  
       { function: "Matcher", using: [@file_list[:masterin]],  creating: [@file_list[:masterout]], category: [@file_list[:categories]], company: [@file_list[:companies]], logging: [@file_list[:audit]] },
       { function: "Reader", using: [@uri_list[:category_development]] },
+      { function: "Filter", using: [@uri_list[:masters]] },
         ]
   end
 end 
 
 class File_io 
-  attr_reader :file_list, :file_function
+  attr_reader :file_list, :file_function, :uri_list
 
   def initialize(setup)
     puts("Initializing file_io")
@@ -75,6 +85,9 @@ class File_io
     @logging      = setup[:logging]
     @category     = setup[:category]
     @company      = setup[:company]
+    @masters      = setup[:masters]
+    @materout     = setup[:masterout]
+    @audit        = setup[:audit]
     @uri          = setup[:uri]
   end
 
@@ -85,35 +98,69 @@ class File_io
         @deduplicator.remove_duplicate_locations()
       when "category_development"
         @uri = Uri.new
-        @uri.write_categories("development", @using)   
+        @uri.write_categories("development", @using) 
+      when "record_filter"
+        @uri = Uri.new
+        @uri.record_filter("production", @using, @masterout, @audit)     
     else
         puts @function
         puts @using
         puts @logging
         puts @category
         puts @company
+        puts @masters
+        puts @masterout
+        puts @audit
         puts @uri
     end
   end
 end
 
 class Uri
-  attr_accessor :uri_list 
+  attr_accessor :uri_list, :file_list 
   
   def initialize()
      puts("Initializing uri")
    end
    
-  def write_categories(area, using)
+  def record_filter(area, using, m1, a1)
     case(area)
-    when "development"
-      @file_in = using[0]
+    when "production"
+      puts(m1)
+      puts(a1)
+      count = 0
+      masterout = File.new("/home/brad/software/csv/masters/masterout.csv", "w") 
+      audit     = File.new("/home/brad/software/csv/masters/audit.csv", "w")
+      @file_in  = using[0]
       open_file = @file_in[:uri]
       open( open_file ) do |record|
         record.each_line do |line|
-#         puts line if line['sometext']
-          puts line
+          count  += 1
+          commas = line.count(',')
+          if line.chomp.empty?
+            audit.puts count 
+          elsif commas < 24
+            audit.puts line + " " + count.to_s
+          else
+            masterout.puts line
           end
+      end
+    end
+  end
+  # This is a example of how to pull a text file from a server
+  # And a first attempt as using @ and @@ with modest success 
+  def write_categories(area, using)
+    case(area)
+      when "development"
+        @file_in = using[0]
+        open_file = @file_in[:uri]
+        open( open_file ) do |record|
+          record.each_line do |line|
+#           puts line if line['sometext']
+#           puts line.count(',')
+           puts line
+          end
+        end
       end
     end
   end
