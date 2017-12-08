@@ -5,9 +5,8 @@
 
 class Controller
  def initialize()
-    puts("Initializing controller")
-    # Files defines every thing that makes up the world of files and uris
-    @files    = Files.new 
+   puts("Initializing controller")
+   @files = Files.new 
   end  
  
  def start   
@@ -17,28 +16,20 @@ class Controller
  def show_menu
    puts <<-DELIMITER
    1. Remove duplicate locations
-   2. List development categories
-   3. Find bad records
+   2. List remote file
+   3. Matcher
      DELIMITER
-  # selection = gets.chomp
-   
-   @uri = File_io.new(@files.file_function[3])         # Filter   
-   @uri.process_control("record_filter", @uri)  
+#   selection = gets.chomp
+    
+    @matcher = File_io.new(@files.file_function[1])         # Filter   
+    @matcher.processor("matcher")  
 =begin 
   case selection
      when "0"
        puts(Controller.methods.sort)
-     when "1"
-      @function = File_io.new(@files.file_function[0])    # Deduplicator
-      @function.process_control("deduplicator", @function)
      when "2"
-      # File_io contains the useful combination of files to process at one time 
-      @uri = File_io.new(@files.file_function[2])         # Reader   
-      @uri.process_control("category_development", @uri)
-      #  Record filter cleans out blank records which make the loader fail
-     when "3"
-      @uri = File_io.new(@files.file_function[3])         # Filter   
-      @uri.process_control("record_filter", @uri)  
+      @uri = File_io.new(@files.file_function[2])         # Filter   
+      @uri.processor("remote_filter")  
    else
      exit
    end
@@ -51,10 +42,7 @@ class Files
   
   def initialize()
     @uri_list = {
-      category_production:  { uri: "http://24.4.249.252/home/rs/Software/csv/chicago1.csv" }, 
-      category_development: { uri: "/home/brad/software/csv/categories/productioncategories.csv" },
-      masters:              { uri: "/home/brad/software/csv/masters/master.csv" }
-           
+      remote_file:  { uri: "/home/brad/software/csv/masters/audit.csv" },     
       }
     # These are the different files we can access in combination as needed
     @file_list = {
@@ -66,103 +54,148 @@ class Files
       }
     # These are the different combinations they are useful to be accessed in
     @file_function = [
-      { function: "Deduplicater", using: [@file_list[:masterin]], creating: [@file_list[:masterout]], logging: [@file_list[:audit]] },  
-      { function: "Matcher", using: [@file_list[:masterin]],  creating: [@file_list[:masterout]], category: [@file_list[:categories]], company: [@file_list[:companies]], logging: [@file_list[:audit]] },
-      { function: "Reader", using: [@uri_list[:category_development]] },
-      { function: "Filter", using: [@uri_list[:masters]] },
+      { :function => "Deduplicater", :using => [@file_list[:master]], :creating => [@file_list[:masterout]], :audit => [@file_list[:audit]] },  
+      { :function => "Matcher", :using => [@file_list[:master]],  :creating => [@file_list[:masterout]], :category => [@file_list[:categories]], :company => [@file_list[:companies]], audit: [@file_list[:audit]] },
+      { :function => "Remote", :using =>[@uri_list[:remote_file]] },
         ]
   end
 end 
 
 class File_io 
-  attr_reader :file_list, :file_function, :uri_list
+  attr_accessor :uri_list, :file_list, :file_function 
 
   def initialize(setup)
     puts("Initializing file_io")
+    @files        = Files.new 
     @function     = setup[:function]
     @using        = setup[:using]
     @creating     = setup[:creating]
-    @logging      = setup[:logging]
     @category     = setup[:category]
     @company      = setup[:company]
-    @masters      = setup[:masters]
-    @materout     = setup[:masterout]
+    @masterout    = setup[:masterout]
     @audit        = setup[:audit]
-    @uri          = setup[:uri]
   end
 
-  def process_control(process, uri)
+  def processor(process)
     case process
       when "deduplicator"
         @deduplicator = Deduplicator.new
         @deduplicator.remove_duplicate_locations()
-      when "category_development"
-        @uri = Uri.new
-        @uri.write_categories("development", @using) 
-      when "record_filter"
-        @uri = Uri.new
-        @uri.record_filter("production", @using, @masterout, @audit)     
+      when "matcher"
+        @matcher = Matcher.new(@files.file_function[1])
+        @matcher.record_matcher()     
+      when "remote_filter"
+        @filter = Uri.new(@files.file_function[2])
+        @filter.remote()     
     else
         puts @function
         puts @using
-        puts @logging
         puts @category
         puts @company
-        puts @masters
+        puts @master
         puts @masterout
         puts @audit
-        puts @uri
     end
   end
 end
 
-class Uri
-  attr_accessor :uri_list, :file_list 
+class Matcher
+  attr_accessor :file_list, :file_function  
   
-  def initialize()
-     puts("Initializing uri")
-   end
-   
-  def record_filter(area, using, m1, a1)
-    case(area)
-    when "production"
-      puts(m1)
-      puts(a1)
-      count = 0
-      masterout = File.new("/home/brad/software/csv/masters/masterout.csv", "w") 
-      audit     = File.new("/home/brad/software/csv/masters/audit.csv", "w")
-      @file_in  = using[0]
-      open_file = @file_in[:uri]
-      open( open_file ) do |record|
-        record.each_line do |line|
-          count  += 1
-          commas = line.count(',')
-          if line.chomp.empty?
-            audit.puts count 
-          elsif commas < 24
-            audit.puts line + " " + count.to_s
-          else
-            masterout.puts line
-          end
-      end
-    end
+  def initialize(setup)
+    puts("Initializing matcher")
+    @function     = setup[:function]
+    @using        = setup[:using]
+    @creating     = setup[:creating]
+    @category     = setup[:category]
+    @company      = setup[:company]
+    @master       = setup[:master]
+    @materout     = setup[:masterout]
+    @audit        = setup[:audit]
   end
-  # This is a example of how to pull a text file from a server
-  # And a first attempt as using @ and @@ with modest success 
-  def write_categories(area, using)
-    case(area)
-      when "development"
-        @file_in = using[0]
-        open_file = @file_in[:uri]
-        open( open_file ) do |record|
-          record.each_line do |line|
-#           puts line if line['sometext']
-#           puts line.count(',')
-           puts line
-          end
+   
+  def record_matcher()
+    
+    @file_using = @using
+    path_name = @file_using[0].fetch(:path)
+    file_name = @file_using[0].fetch(:file)
+    master = path_name + "/" + file_name
+    open( master ) { |record| 
+      record.each_line { |line| 
+#        p line 
+      }
+    }
+    
+    @file_category = @category
+    path_name = @file_category[0].fetch(:path)
+    file_name = @file_category[0].fetch(:file)
+    category = path_name + "/" + file_name
+    open( category ) { |record| 
+      record.each_line { |line| 
+        p line 
+      }
+    }
+
+    @file_company = @company
+    path_name = @file_company[0].fetch(:path)
+    file_name = @file_company[0].fetch(:file)
+    category = path_name + "/" + file_name
+    open( category ) { |record| 
+      record.each_line { |line| 
+#        p line 
+      }
+    }
+
+    @file_creating = @creating
+    path_name  = @file_creating[0].fetch(:path)
+    file_name  = @file_creating[0].fetch(:file)
+    new_master = path_name + "/" + file_name
+    masterout  = File.new(new_master, "w+")
+    
+    @file_audit = @audit
+    path_name   = @file_audit[0].fetch(:path)
+    file_name   = @file_audit[0].fetch(:file)
+    new_audit   = path_name + "/" + file_name
+    audit       = File.new(new_audit, "w+")
+=begin
+        count  += 1
+        commas = line.count(',')
+        if line.chomp.empty?
+          audit.puts count 
+        elsif commas < 24
+          audit.puts line + " " + count.to_s
+        else
+          masterout.puts line
         end
-      end
-    end
+      }
+    }
+=end
+  end
+end 
+
+class Uri
+  attr_accessor :uri_list, :file_list, :file_function  
+  
+  def initialize(setup)
+    puts("Initializing uri")
+    @function     = setup[:function]
+    @using        = setup[:using]
+    @creating     = setup[:creating]
+    @category     = setup[:category]
+    @company      = setup[:company]
+    @master      = setup[:master]
+    @materout     = setup[:masterout]
+    @audit        = setup[:audit]
+  end
+  
+  def remote()
+    @file_in = @using
+    open_file = @file_in[0].fetch(:master)
+    open( open_file ) { |record| 
+      record.each_line { |line| 
+        p line
+      }
+    }
   end
 end 
 
@@ -220,8 +253,6 @@ class Deduplicator
     puts("read: " + read.to_s + " duplicate: " + duplicate.to_s + " output: " + output.to_s)  
   end
 end 
-
-
 
   puts("===============================================")
   controller = Controller.new  
