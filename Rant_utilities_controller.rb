@@ -46,17 +46,19 @@ class Files
       }
     # These are the different files we can access in combination as needed
     @file_list = {
-        categories: { path: "/home/brad/software/csv/categories",  file: "productioncategories.csv" },
-        companies:  { path: "/home/brad/software/csv/companies",   file: "productioncompanies.csv" },
-        master:     { path: "/home/brad/software/csv/masters",     file: "master.csv" },
-        masterout:  { path: "/home/brad/software/csv/masters",     file: "masterout.csv" },  
-        audit:      { path: "/home/brad/software/csv/masters",     file: "audit.csv" }      
+        categories_in:   { path: "/home/brad/software/csv/categories",  file: "productioncategories.csv" },
+        companies_in:    { path: "/home/brad/software/csv/companies",   file: "productioncompanies.csv" },
+        master_in:       { path: "/home/brad/software/csv/masters",     file: "master.csv" },
+        master_out:      { path: "/home/brad/software/csv/masters",     file: "masterout.csv" },
+        no_category_out: { path: "/home/brad/software/csv/masters",     file: "nocategory.csv" },  
+        audit_out:       { path: "/home/brad/software/csv/masters",     file: "audit.csv" }      
       }
     # These are the different combinations they are useful to be accessed in
     @file_function = [
-      { :function => "Deduplicater", :using => [@file_list[:master]], :creating => [@file_list[:masterout]], :audit => [@file_list[:audit]] },  
-      { :function => "Matcher", :using => [@file_list[:master]],  :creating => [@file_list[:masterout]], :category => [@file_list[:categories]], :company => [@file_list[:companies]], audit: [@file_list[:audit]] },
-      { :function => "Remote", :using =>[@uri_list[:remote_file]] },
+      { :function => "Deduplicater", :master_in => [@file_list[:masterin]], :master_out => [@file_list[:master_out]], :audit_out => [@file_list[:audit_out]] },  
+      { :function => "Matcher", :master_in => [@file_list[:master_in]], :company_in => [@file_list[:companies_in]],  :category_in => [@file_list[:categories_in]],
+                                :master_out => [@file_list[:master_out]], :no_category_out => [@file_list[:no_category_out]], audit_out: [@file_list[:audit_out]] },
+      { :function => "Remote", :master_in =>[@uri_list[:remote_file]] },
         ]
   end
 end 
@@ -66,14 +68,14 @@ class File_io
 
   def initialize(setup)
     puts("Initializing file_io")
-    @files        = Files.new 
-    @function     = setup[:function]
-    @using        = setup[:using]
-    @creating     = setup[:creating]
-    @category     = setup[:category]
-    @company      = setup[:company]
-    @masterout    = setup[:masterout]
-    @audit        = setup[:audit]
+    @files           = Files.new 
+    @function        = setup[:function]
+    @master_in       = setup[:master_in]
+    @category_in     = setup[:category_in]
+    @company_in      = setup[:company_in]
+    @master_out      = setup[:master_out]
+    @no_category_out = setup[:no_category_out]
+    @audit_out       = setup[:audit_out]
   end
 
   def processor(process)
@@ -89,12 +91,13 @@ class File_io
         @filter.remote()     
     else
         puts @function
-        puts @using
-        puts @category
-        puts @company
-        puts @master
-        puts @masterout
-        puts @audit
+        puts @master_in
+        puts @category_in
+        puts @company_in
+        puts @master_in
+        puts @master_out
+        puts @no_category_out
+        puts @audit_out
     end
   end
 end
@@ -104,59 +107,91 @@ class Matcher
   
   def initialize(setup)
     puts("Initializing matcher")
-    @function     = setup[:function]
-    @using        = setup[:using]
-    @creating     = setup[:creating]
-    @category     = setup[:category]
-    @company      = setup[:company]
-    @master       = setup[:master]
-    @materout     = setup[:masterout]
-    @audit        = setup[:audit]
+    @function           = setup[:function]
+    @master_in          = setup[:master_in]
+    @master_out         = setup[:master_out]
+    @master_in_file     = setup[:master_in_file]
+    @category_in        = setup[:category_in]
+    @company_in         = setup[:company_in]
+    @company_in_data    = setup[:company_in_data]
+    @category_in_data   = setup[:category_in_data]
+    @no_category_out    = setup[:no_category_out]
+    @audit_out          = setup[:audit_out]
+    initialize_files
   end
-   
+  
   def record_matcher()
     
-    @file_using = @using
-    path_name = @file_using[0].fetch(:path)
-    file_name = @file_using[0].fetch(:file)
-    master = path_name + "/" + file_name
-    open( master ) { |record| 
+    attr_accessor = :master_in, :category_in_data, :company_in_data, :master_out, :no_category_out, :audit_out 
+    
+    company_name_data = Array.new                           # initialize the array for the company name split into words
+    category_slots    = Array.new                           # initialize the array for four possible categories for this company record
+    @file_master_in = @master_in
+    path_name = @file_master_in[0].fetch(:path)
+    file_name = @file_master_in[0].fetch(:file)
+    master_in = path_name + "/" + file_name
+    open( master_in ) { |record|                            # as each record is read in from the comma separated values in the master file
       record.each_line { |line| 
-#        p line 
+      master_in_data = line.split(",")                       
+      company_name = master_in_data[9]                      # pick out the company name                
+      company_name_data = company_name.split(" ")           # split the company name up by blanks to match each word in the company name with each production category
+      company_name_data.each do |company_split|             # for each word in the company name
+        @category_in_data.each do |category|                # for each production category
+          company_split.match(category) do |category|       # check for a match between the company name and the production category
+            if category_slots.length < 4                    # if there is a match put it in a slot as long as there is room 
+              category_slots.push(category)                 # keep this category which will become part of the record
+            end                                             # end of if there is a match put it in a slot as long as there is room 
+          end                                               # end of check for a match between the company name and the production category
+        end                                                 # end of for each production category 
+      end                                                   # end of for each word in the company name
+      format_for_output(master_in_data, category_slots)
+      puts(line)
       }
     }
+  end 
+  def initialize_files()
     
-    @file_category = @category
-    path_name = @file_category[0].fetch(:path)
-    file_name = @file_category[0].fetch(:file)
-    category = path_name + "/" + file_name
-    open( category ) { |record| 
-      record.each_line { |line| 
-        p line 
+    attr_accessor = :master_in_file, :category_in_data, :company_in_data, :master_out, :no_category_out, :audit_out
+    
+    @file_category_in = @category_in
+    path_name = @file_category_in[0].fetch(:path)
+    file_name = @file_category_in[0].fetch(:file)
+    @category_in_data = Array.new
+    category_in = path_name + "/" + file_name
+    open( category_in ) { |record| 
+      record.each_line { |line|
+       @category_in_data.push(line.chomp)
       }
     }
 
-    @file_company = @company
-    path_name = @file_company[0].fetch(:path)
-    file_name = @file_company[0].fetch(:file)
-    category = path_name + "/" + file_name
-    open( category ) { |record| 
+    @file_company_in = @company_in
+    path_name = @file_company_in[0].fetch(:path)
+    file_name = @file_company_in[0].fetch(:file)
+    @company_in_data = Array.new
+    company_in = path_name + "/" + file_name
+    open( company_in ) { |record| 
       record.each_line { |line| 
-#        p line 
+        @company_in_data.push(line.chomp)
       }
     }
 
-    @file_creating = @creating
-    path_name  = @file_creating[0].fetch(:path)
-    file_name  = @file_creating[0].fetch(:file)
-    new_master = path_name + "/" + file_name
-    masterout  = File.new(new_master, "w+")
+    @file_master_out  = @master_out
+    path_name         = @file_master_out[0].fetch(:path)
+    file_name         = @file_master_out[0].fetch(:file)
+    new_master_out    = path_name + "/" + file_name
+    @master_out       = File.new(new_master_out, "w+")
     
-    @file_audit = @audit
-    path_name   = @file_audit[0].fetch(:path)
-    file_name   = @file_audit[0].fetch(:file)
-    new_audit   = path_name + "/" + file_name
-    audit       = File.new(new_audit, "w+")
+    @file_no_category_out = @no_category_out
+    path_name         = @file_no_category_out[0].fetch(:path)
+    file_name         = @file_no_category_out[0].fetch(:file)
+    no_category_out   = path_name + "/" + file_name
+    @no_category_out   = File.new(no_category_out, "w+")
+    
+    @file_audit_out   = @audit_out
+    path_name         = @file_audit_out[0].fetch(:path)
+    file_name         = @file_audit_out[0].fetch(:file)
+    new_audit_out     = path_name + "/" + file_name
+    @audit_out        = File.new(new_audit_out, "w+")
 =begin
         count  += 1
         commas = line.count(',')
@@ -171,6 +206,11 @@ class Matcher
     }
 =end
   end
+  
+  def format_for_output(master_in_data, category_slots)
+    line = [category_slots[0], category_slots[1], category_slots[2], category_slots[3]].join(",") 
+    return line
+  end
 end 
 
 class Uri
@@ -178,18 +218,17 @@ class Uri
   
   def initialize(setup)
     puts("Initializing uri")
-    @function     = setup[:function]
-    @using        = setup[:using]
-    @creating     = setup[:creating]
-    @category     = setup[:category]
-    @company      = setup[:company]
-    @master      = setup[:master]
-    @materout     = setup[:masterout]
-    @audit        = setup[:audit]
+    @function       = setup[:function]
+    @category_out   = setup[:category_in]
+    @company_out    = setup[:company_in]
+    @master_in      = setup[:master_in]
+    @master_out     = setup[:master_out]
+    @nocategory_out = setup[:no_category_out]
+    @audit_out      = setup[:audit_out]
   end
   
   def remote()
-    @file_in = @using
+    @file_in = @master_in
     open_file = @file_in[0].fetch(:master)
     open( open_file ) { |record| 
       record.each_line { |line| 
