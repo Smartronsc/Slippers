@@ -15,15 +15,13 @@ class Controller
  
  def show_menu
    puts <<-DELIMITER
-   1. Remove duplicate locations
-   2. List remote file
-   3. Matcher
+   1. Matcher
      DELIMITER
-#   selection = gets.chomp
-    
-    @sorter = File_io.new(@files.file_function[2])          
-    @sorter.processor("sorter")  
-=begin 
+   selection = gets.chomp
+#     selection = "1"     
+#    @sorter = File_io.new(@files.file_function[2])          
+#    @sorter.processor("sorter")  
+#=begin 
   case selection
     when "0"
       puts(Controller.methods.sort)
@@ -36,7 +34,7 @@ class Controller
    else
      exit
    end
-=end
+#=end
  end
 
 class Files
@@ -49,22 +47,23 @@ class Files
       }
     # These are the different files we can access in combination as needed
     @file_list = {
-        categories_in:    { path: "/home/brad/software/csv/categories",   file: "productioncategories.csv" },
-#        categories_in:   { path: "/home/brad/software/csv/categories",   file: "testcategories.csv" },
-        companies_in:     { path: "/home/brad/software/csv/companies",    file: "productioncompanies.csv" },
-        master_in:        { path: "/home/brad/software/csv/masters",      file: "master.csv" },
-#        master_in:       { path: "/home/brad/software/csv/masters",      file: "mastertest.csv" },
-        master_out:       { path: "/home/brad/software/csv/masters",      file: "masterout.csv" },
-        no_category_out:  { path: "/home/brad/software/csv/masters",      file: "nocategory.csv" },
-        sort_in:          { path: "/home/brad/software/csv/sort",         file: "sortin.csv" },
-        sort_out:         { path: "/home/brad/software/csv/sort",         file: "sortout.csv" },  
-        audit_out:        { path: "/home/brad/software/csv/masters",      file: "audit.csv" }      
+        categories_in:     { path: "/home/brad/software/csv/categories",   file: "productioncategories.csv" },
+#        categories_in:    { path: "/home/brad/software/csv/categories",   file: "testcategories.csv" },
+        companies_in:      { path: "/home/brad/software/csv/companies",    file: "productioncompanies.csv" },
+        master_in:         { path: "/home/brad/software/csv/masters",      file: "master.csv" },
+#        master_in:        { path: "/home/brad/software/csv/masters",      file: "mastertest.csv" },
+        master_out:        { path: "/home/brad/software/csv/masters",      file: "masterout.csv" },
+        duplicates_out:    { path: "/home/brad/software/csv/masters",      file: "duplicates.csv" },
+        no_category_out:   { path: "/home/brad/software/csv/masters",      file: "nocategory.csv" },
+        sort_in:           { path: "/home/brad/software/csv/sort",         file: "sortin.csv" },
+        sort_out:          { path: "/home/brad/software/csv/sort",         file: "sortout.csv" },  
+        audit_out:         { path: "/home/brad/software/csv/sort",         file: "audit.csv" }      
       }
     # These are the different combinations they are useful to be accessed in
     @file_function = [
-      { :function => "Deduplicater", :master_in => [@file_list[:masterin]], :master_out => [@file_list[:master_out]], :audit_out => [@file_list[:audit_out]] },  
+      { :function => "Not_in_use", :master_in => [@file_list[:masterin]], :master_out => [@file_list[:master_out]], :audit_out => [@file_list[:audit_out]] },  
       { :function => "Matcher", :master_in => [@file_list[:master_in]], :company_in => [@file_list[:companies_in]],  :category_in => [@file_list[:categories_in]],
-                                :master_out => [@file_list[:master_out]], :no_category_out => [@file_list[:no_category_out]], audit_out: [@file_list[:audit_out]] },
+                                :master_out => [@file_list[:master_out]], :no_category_out => [@file_list[:no_category_out]], duplicates_out: [@file_list[:duplicates_out]], audit_out: [@file_list[:audit_out]] },
       { :function => "Sorter", :sort_in =>[@file_list[:sort_in]], :sort_out =>[@file_list[:sort_out]], audit_out: [@file_list[:audit_out]] },
       { :function => "Remote", :master_in =>[@uri_list[:remote_file]] },
         ]
@@ -80,6 +79,7 @@ class File_io
     @function        = setup[:function]
     @master_in       = setup[:master_in]
     @master_out      = setup[:master_out]
+    @duplicates_out  = setup[:duplicates_out]
     @category_in     = setup[:category_in]
     @company_in      = setup[:company_in]
     @sort_in         = setup[:sort_in]
@@ -90,9 +90,6 @@ class File_io
 
   def processor(process)
     case process
-      when "deduplicator"
-        @deduplicator = Deduplicator.new
-        @deduplicator.remove_duplicate_locations()
       when "matcher"
         @matcher = Matcher.new(@files.file_function[1])
         @matcher.record_matcher()   
@@ -111,6 +108,7 @@ class File_io
         puts @sort_out
         puts @master_in
         puts @master_out
+        puts @duplicates
         puts @no_category_out
         puts @audit_out
     end
@@ -130,22 +128,28 @@ class Matcher
     @company_in         = setup[:company_in]
     @company_in_data    = setup[:company_in_data]
     @category_in_data   = setup[:category_in_data]
+    @duplicates_out     = setup[:duplicates_out]       
     @no_category_out    = setup[:no_category_out]
     @audit_out          = setup[:audit_out]
+    @line_save          = ""
+    @latitude_save      = 0
+    @longitude_save     = 0
     initialize_files
   end
   
   def record_matcher()
     
-    attr_accessor = :master_in, :category_in_data, :company_in_data, :master_out, :no_category_out, :audit_out 
+    attr_accessor = :master_in, :category_in_data, :company_in_data, :master_out, :no_category_out, :duplicates_out, :audit_out 
     
     production_count  = 0                                     # records pushed to production
-    rework_count      = 0                                     # records without a home
+    rework_count      = 0                                     # records without a category
     processed_count   = 0                                     # total records processed                         
     pushed            = false                                 # no categories matched the words that compose the company name
     company_name_data = Array.new                             # initialize the array for the company name split into words
     category_slots    = Array.new                             # initialize the array for four possible categories for this company record
     @file_master_in   = @master_in
+    @duplicate        = 0                                     # latitude and longitude same as the previous record count overall
+    @non_duplicates   = 0                                     # non duplicates output as valid data 
     path_name = @file_master_in[0].fetch(:path)
     file_name = @file_master_in[0].fetch(:file)
     master_in = path_name + "/" + file_name
@@ -164,18 +168,23 @@ class Matcher
             end                                               # end of check for a match between the company name and the production category
           end                                                 # end of for each production category 
         line = format_for_output(master_in_data, category_slots)
-        if pushed                                             # pushed ? @master_out.puts(line) : @no_category_out.puts(line)
-          @master_out.puts(line)
-          production_count +=1
-        else
-          @no_category_out.puts(line)
-          rework_count += 1
+        line = remove_duplicates(line)
+        unless line == "duplicate"
+          if pushed                                             # pushed ? @master_out.puts(line) : @no_category_out.puts(line)
+            @master_out.puts(line)
+            production_count +=1
+          else
+            @no_category_out.puts(line)
+            rework_count += 1
+          end
         end
         pushed = false
         category_slots = []
       }
     }
     puts("Categories in production: " + @category_in_data.length().to_s)
+    puts("Total duplicates: " + @duplicate.to_s) 
+    puts("Non duplicates written: " + @non_duplicates.to_s)
     puts("Total records processed: " + processed_count.to_s)
     puts("Records pushed to production: " + production_count.to_s)
     puts("Records needing more attention: " + rework_count.to_s)
@@ -183,7 +192,7 @@ class Matcher
   
   def initialize_files()
     
-    attr_accessor = :master_in_file, :category_in_data, :company_in_data, :master_out, :no_category_out, :audit_out, :sort_in, :sort_out
+    attr_accessor = :master_in_file, :category_in_data, :company_in_data, :master_out, :no_category_out, :duplicates_out, :audit_out, :sort_in, :sort_out
     
     @file_category_in = @category_in
     path_name = @file_category_in[0].fetch(:path)
@@ -217,8 +226,14 @@ class Matcher
     path_name         = @file_no_category_out[0].fetch(:path)
     file_name         = @file_no_category_out[0].fetch(:file)
     no_category_out   = path_name + "/" + file_name
-    @no_category_out   = File.new(no_category_out, "w+")
+    @no_category_out  = File.new(no_category_out, "w+")
     
+    @file_duplicates_out = @duplicates_out
+    path_name         = @file_duplicates_out[0].fetch(:path)
+    file_name         = @file_duplicates_out[0].fetch(:file)
+    duplicates_out    = path_name + "/" + file_name
+    @duplicates_out   = File.new(duplicates_out, "w+")
+
     @file_audit_out   = @audit_out
     path_name         = @file_audit_out[0].fetch(:path)
     file_name         = @file_audit_out[0].fetch(:file)
@@ -234,7 +249,41 @@ class Matcher
       data[19], data[20], data[21], data[22], data[23]].join(",") 
     return line.chomp
   end
-end 
+  
+  def remove_duplicates(line) 
+    line_split     = []
+    latitude       = 0
+    longitude      = 0 
+    # if line_out is blank initialize the process, get a fresh line, split it, then get the next line
+    #  now we are set up for the next line and line_out has  the previous line for processing in the else if else logic  
+    if @latitude_save == ""
+      @line_save      = line
+      line_split      = line.split(",")
+      @latitude_save  = line_split[22] 
+      @longitude_save = line_split[23]
+      else
+        # split the "next line" which is the current line, compare to the previous line
+        #  if it is the same location write the previous line out as a duplicate audit trail
+        #   the current becomes the previous which sets us for the next line to be read in 
+        #    the location has not changed yet so keep comparing it to new masterin until it does
+        line_split = line.split(",")
+        if @latitude_save == line_split[22] && @longitude_save == line_split[23]
+          @duplicate += 1
+          @duplicates_out.puts @line_save
+          @line_save = line
+          return line = "duplicate"
+          else
+            # the location has changed so write the previous record, update the location to match the "new" previous
+            #  make the current record the "new" previous 
+            @latitude_save  = line_split[22] 
+            @longitude_save = line_split[23]
+            @line_save      = line
+            @non_duplicates += 1
+            return line
+        end
+      end
+    end
+  end 
 
 class Sorter
   
@@ -305,60 +354,8 @@ class Uri
   end
 end 
 
-class Deduplicator
-  
-  def initialize()
-     puts("Initializing deduplicator")
-   end
-   
-  def remove_duplicate_locations()
-    line_out      = ""
-    line_split    = []
-    duplicate     = 0
-    latitude      = 0
-    longitude     = 0
-    latitude_out  = 0
-    longitude_out = 0
-    output        = 0
-    read          = 0
-    masterout     = File.new("/home/brad/software/csv/test/masterout.csv", "w") 
-    duplicates    = File.new("/home/brad/software/csv/test/duplicates.csv", "w")
-    
-    File.readlines("/home/brad/software/csv/test/masterin.csv").each do |line| 
-      read += 1 
-      # if line_out is blank initialize the process, get a fresh line, split it, then get the next line
-      #  now we are set up for the next line and line_out has  the previouse line for processing in the else if else logic  
-      if line_out == ""
-        line_out      = line
-        line_split    = line.split(",")
-        latitude_out  = line_split[22] 
-        longitude_out = line_split[23]
-        else
-          # split the "next line" which is the current line, compare to the previous line
-          #  if it is the same location write the previous line out as a duplicate audit trail
-          #   the current becomes the previous which sets us for the next line to be read in 
-          #    location has not changed yet so keep comparing it to new masterin until it does
-          line_split = line.split(",")
-          if latitude_out == line_split[22] && longitude_out == line_split[23]
-            duplicate += 1
-            duplicates.puts line_out
-            line_out = line
-            else
-              # location has changed so write the previous record, update the location to match the "new" previous
-              #  make the current record the "new" previous and get a new line to compare the location of
-              masterout.puts line_out
-              latitude_out  = line_split[22] 
-              longitude_out = line_split[23]
-              line_out      = line
-              output += 1
-          end
-      end
-    end 
-    masterout.puts line_out
-    output +=1
-    puts("read: " + read.to_s + " duplicate: " + duplicate.to_s + " output: " + output.to_s)  
-  end
-end 
+
+
 
   puts("===============================================")
   controller = Controller.new  
