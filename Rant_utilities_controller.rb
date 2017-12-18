@@ -16,12 +16,13 @@ class Controller
  def show_menu
    puts <<-DELIMITER
    1. Matcher
+   2. Sorter
+   3. Remote
+   4. Geographic
      DELIMITER
-   selection = gets.chomp
-#     selection = "1"     
-#    @sorter = File_io.new(@files.file_function[2])          
-#    @sorter.processor("sorter")  
-#=begin 
+#   selection = gets.chomp              # selection is a string
+selection = "4"
+     #=begin 
   case selection
     when "0"
       puts(Controller.methods.sort)
@@ -29,9 +30,15 @@ class Controller
       @matcher = File_io.new(@files.file_function[1])     # Filter   
       @matcher.processor("matcher")  
     when "2"
-      @uri = File_io.new(@files.file_function[2])       
+      @sorter = File_io.new(@files.file_function[2])
+      @sorter.processor("sorter")    
+    when "3"
+      @uri = File_io.new(@files.file_function[3])       
       @uri.processor("remote_filter")  
-   else
+    when "4"
+      @city_state = File_io.new(@files.file_function[4])       
+      @city_state.processor("geographic")  
+    else
      exit
    end
 #=end
@@ -54,6 +61,7 @@ class Files
 #        master_in:        { path: "/home/brad/software/csv/masters",      file: "mastertest.csv" },
         master_out:        { path: "/home/brad/software/csv/masters",      file: "masterout.csv" },
         duplicates_out:    { path: "/home/brad/software/csv/masters",      file: "duplicates.csv" },
+        geographics_out:   { path: "/home/brad/software/csv/masters",      file: "geographics.csv" },
         no_category_out:   { path: "/home/brad/software/csv/masters",      file: "nocategory.csv" },
         sort_in:           { path: "/home/brad/software/csv/sort",         file: "sortin.csv" },
         sort_out:          { path: "/home/brad/software/csv/sort",         file: "sortout.csv" },  
@@ -66,6 +74,7 @@ class Files
                                 :master_out => [@file_list[:master_out]], :no_category_out => [@file_list[:no_category_out]], duplicates_out: [@file_list[:duplicates_out]], audit_out: [@file_list[:audit_out]] },
       { :function => "Sorter", :sort_in =>[@file_list[:sort_in]], :sort_out =>[@file_list[:sort_out]], audit_out: [@file_list[:audit_out]] },
       { :function => "Remote", :master_in =>[@uri_list[:remote_file]] },
+      { :function => "Geographic", :master_in =>[@file_list[:master_out]], :geographics_out =>[@file_list[:geographics_out]], :audit_out => [@file_list[:audit_out]] }
         ]
   end
 end 
@@ -98,7 +107,10 @@ class File_io
         @sorter.record_sorter()    
       when "remote_filter"
         @filter = Uri.new(@files.file_function[3])
-        @filter.remote()     
+        @filter.remote() 
+      when "geographic"
+        @city_state = Geographic.new(@files.file_function[4])
+        @city_state.record_geographic()         
     else
         puts @function
         puts @master_in
@@ -110,6 +122,7 @@ class File_io
         puts @master_out
         puts @duplicates
         puts @no_category_out
+        puts @city_state
         puts @audit_out
     end
   end
@@ -354,13 +367,125 @@ class Uri
   end
 end 
 
+class Geographic
+  attr_accessor :file_list, :file_function  
+  
+  def initialize(setup)
+    puts("Initializing geographic")
+    @function           = setup[:function]
+    @master_in          = setup[:master_in]
+    @geographics_out    = setup[:geographics_out]
+    @audit_out          = setup[:audit_out]
+    initialize_files
+  end
+  
+  def record_geographic()
+    
+    attr_accessor = :master_in, :geographics_out, :audit_out 
+    
+    processed_count   = 0                                     # total records processed                         
+    city_data     = Array.new
+    state_data    = Array.new
+    zipcode_data  = Array.new(50000) { Array.new(5) }
+    @current_city = ""
+    @current_latitude_low   = 999.0
+    @current_latitude_high  = 0.0
+    @current_longitude_low  = -999.0
+    @current_longitude_high = 0.0
+    @file_master_in = @master_in
+    path_name = @file_master_in[0].fetch(:path)
+    file_name = @file_master_in[0].fetch(:file)
+    master_in = path_name + "/" + file_name
+    open( master_in ) { |record|                              # as each record is read in from the comma separated values in the master file
+      record.each_line { |line| 
+        master_in_data = line.split(",")
+        city      = master_in_data[16] 
+        state     = master_in_data[17]                        
+        zipcode   = master_in_data[18]
+        latitude  = master_in_data[22]
+        longitude = master_in_data[23]
+        city_data << city
+        city_data << zipcode
+        city_data << latitude.to_f
+        city_data << longitude.to_f
+        city_data << state 
+        state_data << state
+        state_data << city 
+        state_data << zipcode
+        state_data << longitude.to_f
+        state_data << latitude.to_f
+        zipcode_data[processed_count][0] = zipcode
+        zipcode_data[processed_count][1] = city
+        zipcode_data[processed_count][2] = latitude.to_f
+        zipcode_data[processed_count][3] = longitude.to_f  
+        zipcode_data[processed_count][4] = state  
+        processed_count += 1                               
+      }
+      zipcode_processes(zipcode_data)
+    }
+    puts("Total records processed: " + processed_count.to_s)
+  end 
+  
+  def initialize_files()
+    
+    attr_accessor = :master_in_file, :geographics_out, :audit_out
+    
+    @file_geographics_out = @geographics_out
+    path_name         = @file_geographics_out[0].fetch(:path)
+    file_name         = @file_geographics_out[0].fetch(:file)
+    geographics_out    = path_name + "/" + file_name
+    @geographics_out   = File.new(geographics_out, "w+")
 
-
-
+    @file_audit_out   = @audit_out
+    path_name         = @file_audit_out[0].fetch(:path)
+    file_name         = @file_audit_out[0].fetch(:file)
+    new_audit_out     = path_name + "/" + file_name
+    @audit_out        = File.new(new_audit_out, "w+")
+  end
+  
+  def zipcode_processes(zipcode_data)
+    zipcode_data.each do |record|
+      if @current_city != "" 
+        latitude_f = 
+        latitude_result_low = @current_latitude_low <=> record[2]
+        case latitude_result_low
+          when -1
+            latitude_result_high = @current_latitude_high <=> record[2]
+            case latitude_result_high
+              when 1
+                @current_latitude_high, latitude_f = latitude_f, @current_latitude_high
+            end
+          when 1
+            @current_latitude_low, latitude_f = latitude_f, @current_latitude_low
+            latitude_f = record[2]
+            latitude_result_high = @current_latitude_high <=> latitude_f
+            case latitude_result_high
+              when -1
+                @current_latitude_high, latitude_f = latitude_f, @current_latitude_high
+            end
+        end       
+        longitude_f = record[3]
+        longitude_result = @current_longitude_high <=> longitude_f
+        case longitude_result
+          when -1
+            @current_longitude_low, longitude_f = longitude_f, @current_longitude_low
+          when 1
+            @current_longitude_high, longitude_f = longitude_f, @current_longitude_high
+        end       
+#        @geographics_out.puts(line)
+      else
+        @current_city = zipcode_data[1]
+      end      
+    end 
+    p @current_latitude_low
+    p @current_latitude_high
+    p @current_longitude_low
+    p @current_longitude_high
+  end
+end
   puts("===============================================")
   controller = Controller.new  
   controller.start()
   puts("===============================================")
   
 end  
- 
