@@ -57,8 +57,8 @@ class Files
         categories_in:     { path: "/home/brad/software/csv/categories",   file: "productioncategories.csv" },
 #        categories_in:    { path: "/home/brad/software/csv/categories",   file: "testcategories.csv" },
         companies_in:      { path: "/home/brad/software/csv/companies",    file: "productioncompanies.csv" },
-        master_in:         { path: "/home/brad/software/csv/masters",      file: "master.csv" },
-#        master_in:        { path: "/home/brad/software/csv/masters",      file: "mastertest.csv" },
+#        master_in:         { path: "/home/brad/software/csv/masters",      file: "master.csv" },
+        master_in:        { path: "/home/brad/software/csv/masters",      file: "mastertest.csv" },
         master_out:        { path: "/home/brad/software/csv/masters",      file: "masterout.csv" },
         duplicates_out:    { path: "/home/brad/software/csv/masters",      file: "duplicates.csv" },
         geographics_out:   { path: "/home/brad/software/csv/masters",      file: "geographics.csv" },
@@ -384,9 +384,9 @@ class Geographic
     attr_accessor = :master_in, :geographics_out, :audit_out 
     
     processed_count   = 0                                     # total records processed                         
-    city_data     = Array.new
-    state_data    = Array.new
-    zipcode_data  = Array.new(50000) { Array.new(5) }
+    city_data     = Array.new(50000) { Array.new(5) }         # city, zipcode, latitude, longitude, state 
+    state_data    = Array.new(50000) { Array.new(5) }         # state, city, zipcode, longitude, latitude
+    zipcode_data  = Array.new(50000) { Array.new(5) }         # zipcode, city, latitude, longitude, state  
     @current_city = ""
     @current_latitude_low   = 999.0
     @current_latitude_high  = 0.0
@@ -396,7 +396,7 @@ class Geographic
     path_name = @file_master_in[0].fetch(:path)
     file_name = @file_master_in[0].fetch(:file)
     master_in = path_name + "/" + file_name
-    open( master_in ) { |record|                              # as each record is read in from the comma separated values in the master file
+    open( master_in ) { |record|                              # as each record is read in from the comma separated values in the master filez5aes
       record.each_line { |line| 
         master_in_data = line.split(",")
         city      = master_in_data[16] 
@@ -404,16 +404,16 @@ class Geographic
         zipcode   = master_in_data[18]
         latitude  = master_in_data[22]
         longitude = master_in_data[23]
-        city_data << city
-        city_data << zipcode
-        city_data << latitude.to_f
-        city_data << longitude.to_f
-        city_data << state 
-        state_data << state
-        state_data << city 
-        state_data << zipcode
-        state_data << longitude.to_f
-        state_data << latitude.to_f
+        city_data [processed_count][0] = city
+        city_data [processed_count][1] = zipcode
+        city_data [processed_count][2] = latitude.to_f
+        city_data [processed_count][3] = longitude.to_f
+        city_data [processed_count][4] = state 
+        state_data [processed_count][0] = state
+        state_data [processed_count][1] = city 
+        state_data [processed_count][2] = zipcode
+        state_data [processed_count][3] = longitude.to_f
+        state_data [processed_count][4] = latitude.to_f
         zipcode_data[processed_count][0] = zipcode
         zipcode_data[processed_count][1] = city
         zipcode_data[processed_count][2] = latitude.to_f
@@ -446,7 +446,7 @@ class Geographic
   def zipcode_processes(zipcode_data)
     zipcode_data.each do |record|
       if @current_city != "" 
-        latitude_f = 
+        latitude_f = record[2]
         latitude_result_low = @current_latitude_low <=> record[2]
         case latitude_result_low
           when -1
@@ -475,12 +475,12 @@ class Geographic
 #        @geographics_out.puts(line)
       else
         @current_city = zipcode_data[1]
-      end      
-    end 
+     end      
     p @current_latitude_low
     p @current_latitude_high
     p @current_longitude_low
     p @current_longitude_high
+    end
   end
 end
   puts("===============================================")
